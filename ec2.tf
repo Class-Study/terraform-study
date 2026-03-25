@@ -53,11 +53,12 @@ resource "aws_instance" "backend" {
 # Contém: Nginx (reverse proxy) + React/Vite frontend
 # Recebe o private IP do backend para configurar o proxy Nginx
 resource "aws_instance" "frontend" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.frontend_instance_type
-  subnet_id              = aws_subnet.frontend.id
-  vpc_security_group_ids = [aws_security_group.frontend.id]
-  key_name               = aws_key_pair.main.key_name
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = var.frontend_instance_type
+  subnet_id                   = aws_subnet.frontend.id
+  vpc_security_group_ids      = [aws_security_group.frontend.id]
+  key_name                    = aws_key_pair.main.key_name
+  associate_public_ip_address = true
 
 
   root_block_device {

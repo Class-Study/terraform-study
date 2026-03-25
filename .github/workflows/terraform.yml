@@ -113,16 +113,33 @@ jobs:
           (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
           github.event.inputs.action == 'apply'
         run: |
-          echo "frontend_ip=$(terraform output -raw frontend_public_ip)" >> $GITHUB_OUTPUT
-          echo "backend_ip=$(terraform output -raw backend_private_ip)"  >> $GITHUB_OUTPUT
+          FRONTEND_IP=$(terraform output -raw frontend_public_ip 2>/dev/null || true)
+          BACKEND_IP=$(terraform output -raw backend_private_ip  2>/dev/null || true)
+
+          if [ -z "$FRONTEND_IP" ]; then
+            echo "❌ frontend_public_ip está vazio — a instância pode não ter sido criada ou não possui IP público."
+            echo "   Verifique se o terraform apply concluiu com sucesso e se a instância está Running."
+            exit 1
+          fi
+
+          if [ -z "$BACKEND_IP" ]; then
+            echo "❌ backend_private_ip está vazio — a instância backend pode não ter sido criada."
+            exit 1
+          fi
+
+          echo "✅ frontend_ip=$FRONTEND_IP"
+          echo "✅ backend_ip=$BACKEND_IP"
+          echo "frontend_ip=$FRONTEND_IP" >> $GITHUB_OUTPUT
+          echo "backend_ip=$BACKEND_IP"   >> $GITHUB_OUTPUT
 
   # ── Job 2: Deploy nas EC2 via SSH ────────────────────────────────────────────
   deploy:
     name: Deploy nas EC2
     needs: terraform
     if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      github.event.inputs.action == 'apply'
+      needs.terraform.result == 'success' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       github.event.inputs.action == 'apply')
     runs-on: ubuntu-latest
     environment: terraform
     permissions:
