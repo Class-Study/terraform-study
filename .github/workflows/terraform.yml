@@ -14,6 +14,7 @@ jobs:
 
   # ── Job 1: Infraestrutura com Terraform ──────────────────────────────────────
   terraform:
+    environment: terraform
     name: Terraform ${{ github.event_name == 'push' && 'Apply' || 'Plan' }}
     runs-on: ubuntu-latest
     outputs:
