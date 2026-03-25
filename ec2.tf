@@ -19,6 +19,7 @@ resource "aws_instance" "backend" {
   subnet_id              = aws_subnet.backend.id
   vpc_security_group_ids = [aws_security_group.backend.id]
   key_name               = aws_key_pair.main.key_name
+  iam_instance_profile   = aws_iam_instance_profile.backend_ec2.name
 
   root_block_device {
     volume_size           = var.backend_volume_size
@@ -35,6 +36,9 @@ resource "aws_instance" "backend" {
     rabbitmq_password = var.rabbitmq_password
     jwt_secret        = var.jwt_secret
     back_version      = var.back_version
+    aws_region        = var.aws_region
+    project_name      = var.project_name
+    environment       = var.environment
   })
 
   tags = {

@@ -3,7 +3,7 @@
 # Backend EC2 - Setup Script (Ubuntu 24.04)
 # Gerado pelo Terraform templatefile()
 # Contém: PostgreSQL 16 + RabbitMQ 3.13 + Spring Boot (Java)
-# Os valores sao variaveis Terraform - substituidas antes de rodar
+# Logs enviados para AWS CloudWatch via driver awslogs
 # =============================================================================
 set -euo pipefail
 exec > >(tee /var/log/user-data.log | logger -t user-data) 2>&1
@@ -67,6 +67,13 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${aws_region}
+        awslogs-group: /${project_name}/${environment}/postgres
+        awslogs-stream: postgres
+        awslogs-create-group: "true"
 
   # ── RabbitMQ 3.13 ───────────────────────────────────────────────────────────
   rabbitmq:
@@ -83,6 +90,13 @@ services:
       retries: 5
       start_period: 30s
     restart: unless-stopped
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${aws_region}
+        awslogs-group: /${project_name}/${environment}/rabbitmq
+        awslogs-stream: rabbitmq
+        awslogs-create-group: "true"
 
   # ── Backend Spring Boot ─────────────────────────────────────────────────────
   backend:
@@ -111,6 +125,13 @@ services:
       retries: 5
       start_period: 60s
     restart: unless-stopped
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${aws_region}
+        awslogs-group: /${project_name}/${environment}/backend
+        awslogs-stream: backend
+        awslogs-create-group: "true"
 
 volumes:
   postgres_data:
@@ -124,5 +145,5 @@ chown -R ubuntu:ubuntu /opt/app
 echo "========================================"
 echo " Backend setup concluido!"
 echo " Spring Boot iniciando (aguarde ~60s)..."
-echo " Logs: docker compose -f /opt/app/docker-compose.yml logs -f"
+echo " Logs: AWS CloudWatch → /${project_name}/${environment}/backend"
 echo "========================================"
