@@ -5,18 +5,37 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Ação a executar"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
 
 env:
   TF_VERSION: "1.6.0"
   AWS_REGION:  "us-east-1"
+  TF_COMMON_VARS: >-
+    -var="db_password=${{ secrets.TF_VAR_DB_PASSWORD }}"
+    -var="rabbitmq_password=${{ secrets.TF_VAR_RABBITMQ_PASSWORD }}"
+    -var="jwt_secret=${{ secrets.TF_VAR_JWT_SECRET }}"
+    -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
 
 jobs:
 
   # ── Job 1: Infraestrutura com Terraform ──────────────────────────────────────
   terraform:
-    environment: terraform
-    name: Terraform ${{ github.event_name == 'push' && 'Apply' || 'Plan' }}
+    name: >-
+      Terraform
+      ${{ github.event.inputs.action == 'destroy' && 'Destroy' ||
+          github.event_name == 'push' && 'Apply' || 'Plan' }}
     runs-on: ubuntu-latest
+    environment: terraform
     outputs:
       frontend_ip: ${{ steps.tf_outputs.outputs.frontend_ip }}
       backend_ip:  ${{ steps.tf_outputs.outputs.backend_ip }}
@@ -29,7 +48,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false  # necessário para capturar outputs
+          terraform_wrapper: false
 
       - name: Configurar AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -48,14 +67,19 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
+      # ── DESTROY manual (somente via workflow_dispatch) ──────────────────────
+      - name: "⚠️ Terraform Destroy"
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          echo "::warning::Executando DESTROY — toda a infraestrutura será removida!"
+          terraform destroy -auto-approve ${{ env.TF_COMMON_VARS }}
+
+      # ── PLAN (PRs, push e manual) ───────────────────────────────────────────
       - name: Terraform Plan
         id: plan
+        if: github.event.inputs.action != 'destroy'
         run: |
-          terraform plan -no-color -out=tfplan \
-            -var="db_password=${{ secrets.TF_VAR_DB_PASSWORD }}"            \
-            -var="rabbitmq_password=${{ secrets.TF_VAR_RABBITMQ_PASSWORD }}" \
-            -var="jwt_secret=${{ secrets.TF_VAR_JWT_SECRET }}"               \
-            -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
+          terraform plan -no-color -out=tfplan ${{ env.TF_COMMON_VARS }}
 
       - name: Comentar Plan no PR
         if: github.event_name == 'pull_request'
@@ -74,13 +98,18 @@ jobs:
               body: output
             })
 
+      # ── APPLY (push na main ou manual com action=apply) ─────────────────────
       - name: Terraform Apply
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: |
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          github.event.inputs.action == 'apply'
         run: terraform apply -auto-approve tfplan
 
       - name: Capturar IPs das EC2
         id: tf_outputs
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: |
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          github.event.inputs.action == 'apply'
         run: |
           echo "frontend_ip=$(terraform output -raw frontend_public_ip)" >> $GITHUB_OUTPUT
           echo "backend_ip=$(terraform output -raw backend_private_ip)"  >> $GITHUB_OUTPUT
@@ -89,10 +118,17 @@ jobs:
   deploy:
     name: Deploy nas EC2
     needs: terraform
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: |
+      github.event.inputs.action != 'destroy' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       github.event.inputs.action == 'apply')
     runs-on: ubuntu-latest
+    environment: terraform
 
     steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
       - name: Configurar chave SSH
         run: |
           mkdir -p ~/.ssh
@@ -100,14 +136,23 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ needs.terraform.outputs.frontend_ip }} >> ~/.ssh/known_hosts
 
+      # ── Deploy Frontend ─────────────────────────────────────────────────────
       - name: Deploy Frontend
+        id: deploy_frontend
         run: |
-          ssh -i ~/.ssh/id_rsa \
-              -o StrictHostKeyChecking=no \
-              ec2-user@${{ needs.terraform.outputs.frontend_ip }} \
-              "cd /opt/app && docker compose pull && docker compose up -d --remove-orphans"
+          # Salva versão atual para rollback
+          CURRENT=$(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
+            ec2-user@${{ needs.terraform.outputs.frontend_ip }} \
+            "docker compose -f /opt/app/docker-compose.yml ps --format json | head -1" 2>/dev/null || echo "none")
+          echo "previous_frontend=$CURRENT" >> $GITHUB_OUTPUT
 
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
+            ec2-user@${{ needs.terraform.outputs.frontend_ip }} \
+            "cd /opt/app && docker compose pull && docker compose up -d --remove-orphans"
+
+      # ── Deploy Backend ──────────────────────────────────────────────────────
       - name: Deploy Backend (via frontend como bastion)
+        id: deploy_backend
         run: |
           ssh -i ~/.ssh/id_rsa \
               -o StrictHostKeyChecking=no \
@@ -115,11 +160,34 @@ jobs:
               ec2-user@${{ needs.terraform.outputs.backend_ip }} \
               "cd /opt/app && docker compose pull && docker compose up -d --remove-orphans"
 
-      - name: Verificar saúde da aplicação
+      # ── Health check ────────────────────────────────────────────────────────
+      - name: Health check
+        id: healthcheck
         run: |
           echo "Aguardando aplicação subir..."
-          sleep 20
+          sleep 30
           curl -f --retry 5 --retry-delay 10 \
                http://${{ needs.terraform.outputs.frontend_ip }}/health \
           && echo "✅ Aplicação no ar!" \
-          || echo "⚠️ Health check falhou — verifique os logs nas EC2"
+          || (echo "❌ Health check falhou" && exit 1)
+
+      # ── Rollback automático se health check falhar ──────────────────────────
+      - name: "🔄 Rollback Frontend"
+        if: failure() && steps.healthcheck.outcome == 'failure'
+        run: |
+          echo "::warning::Health check falhou — executando rollback do frontend..."
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
+            ec2-user@${{ needs.terraform.outputs.frontend_ip }} \
+            "cd /opt/app && docker compose down && docker compose up -d"
+          echo "Rollback do frontend concluído"
+
+      - name: "🔄 Rollback Backend"
+        if: failure() && steps.healthcheck.outcome == 'failure'
+        run: |
+          echo "::warning::Executando rollback do backend..."
+          ssh -i ~/.ssh/id_rsa \
+              -o StrictHostKeyChecking=no \
+              -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ec2-user@${{ needs.terraform.outputs.frontend_ip }}" \
+              ec2-user@${{ needs.terraform.outputs.backend_ip }} \
+              "cd /opt/app && docker compose down && docker compose up -d"
+          echo "Rollback do backend concluído"

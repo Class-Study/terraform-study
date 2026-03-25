@@ -53,13 +53,13 @@ variable "backend_instance_type" {
 variable "frontend_volume_size" {
   description = "Tamanho do volume raiz do frontend em GB"
   type        = number
-  default     = 8
+  default     = 30
 }
 
 variable "backend_volume_size" {
   description = "Tamanho do volume raiz do backend em GB"
   type        = number
-  default     = 20
+  default     = 30
 }
 
 # ── SSH ───────────────────────────────────────────────────────────────────────
