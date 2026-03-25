@@ -70,22 +70,57 @@ http {
 }
 NGINX_MAIN_EOF
 
-# ── 5. Nginx — site config (proxy frontend + API) ─────────────────────────────
+# ── 5. Nginx — site config (proxy frontend + API + WebSocket) ────────────────
 cat > /opt/app/nginx/conf.d/app.conf << 'NGINX_SITE_EOF'
 upstream backend_api {
-    server ${backend_private_ip}:8080;
+    server ${backend_private_ip}:8080 max_fails=3 fail_timeout=10s;
     keepalive 32;
+}
+
+upstream frontend {
+    server frontend:80;
 }
 
 server {
     listen 80;
     server_name _;
 
+    # ── Let's Encrypt ACME challenge ─────────────────────────────────────────
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # ── Health check ──────────────────────────────────────────────────────────
     location /health {
         return 200 'OK';
         add_header Content-Type text/plain;
     }
 
+    # ── Resposta graciosa quando o backend estiver offline ────────────────────
+    error_page 502 503 504 = @backend_down;
+    location @backend_down {
+        default_type application/json;
+        return 503 '{"error":"API temporarily unavailable","status":503}';
+    }
+
+    # ── WebSocket endpoint (deve vir antes do bloco /api/) ────────────────────
+    # Nginx precisa encaminhar os headers Upgrade/Connection para que o backend
+    # possa fazer o upgrade da conexão TCP para WebSocket.
+    # Read timeout definido como 1 hora para manter conexões longas ativas.
+    location /api/v1/ws {
+        proxy_pass         http://backend_api;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host       $host;
+        proxy_set_header   X-Real-IP  $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # ── REST API ──────────────────────────────────────────────────────────────
     location /api/ {
         proxy_pass         http://backend_api;
         proxy_http_version 1.1;
@@ -94,20 +129,76 @@ server {
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto $scheme;
-        proxy_read_timeout 90s;
-        proxy_connect_timeout 10s;
+        proxy_read_timeout 60s;
+        proxy_connect_timeout 5s;
         proxy_send_timeout 60s;
+        client_max_body_size 50m;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
     }
 
+    # ── Frontend SPA ──────────────────────────────────────────────────────────
     location / {
-        proxy_pass         http://frontend:80;
+        proxy_pass         http://frontend;
         proxy_http_version 1.1;
-        proxy_set_header   Upgrade    $http_upgrade;
-        proxy_set_header   Connection "upgrade";
-        proxy_set_header   Host       $host;
-        proxy_cache_bypass $http_upgrade;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        add_header X-Content-Type-Options  "nosniff"    always;
+        add_header X-Frame-Options         "SAMEORIGIN" always;
+        add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
     }
 }
+
+# ── HTTPS server (descomentar quando o certificado TLS estiver disponível) ────
+# server {
+#     listen 443 ssl http2;
+#     server_name yourdomain.com;
+#
+#     ssl_certificate     /etc/nginx/certs/fullchain.pem;
+#     ssl_certificate_key /etc/nginx/certs/privkey.pem;
+#
+#     ssl_protocols             TLSv1.2 TLSv1.3;
+#     ssl_ciphers               ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256;
+#     ssl_prefer_server_ciphers off;
+#     ssl_session_cache         shared:SSL:10m;
+#     ssl_session_timeout       1d;
+#     ssl_session_tickets       off;
+#
+#     # HSTS (habilitar após confirmar que HTTPS está funcionando corretamente)
+#     # add_header Strict-Transport-Security "max-age=63072000" always;
+#
+#     location /api/v1/ws {
+#         proxy_pass         http://backend_api;
+#         proxy_http_version 1.1;
+#         proxy_set_header   Upgrade    $http_upgrade;
+#         proxy_set_header   Connection "upgrade";
+#         proxy_set_header   Host       $host;
+#         proxy_read_timeout 3600s;
+#         proxy_send_timeout 3600s;
+#     }
+#
+#     location /api/ {
+#         proxy_pass         http://backend_api;
+#         proxy_http_version 1.1;
+#         proxy_set_header   Connection "";
+#         proxy_set_header   Host              $host;
+#         proxy_set_header   X-Real-IP         $remote_addr;
+#         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+#         proxy_set_header   X-Forwarded-Proto $scheme;
+#         proxy_read_timeout 60s;
+#         client_max_body_size 50m;
+#     }
+#
+#     location / {
+#         proxy_pass         http://frontend;
+#         proxy_http_version 1.1;
+#         proxy_set_header   Host              $host;
+#         proxy_set_header   X-Real-IP         $remote_addr;
+#         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+#         proxy_set_header   X-Forwarded-Proto $scheme;
+#     }
+# }
 NGINX_SITE_EOF
 
 # ── 6. Docker Compose ─────────────────────────────────────────────────────────
