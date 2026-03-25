@@ -40,6 +40,7 @@ resource "aws_instance" "backend" {
     encrypted             = true
   }
 
+  user_data_replace_on_change = true
   user_data = templatefile("${path.module}/templates/backend_user_data.sh.tpl", {
     db_name           = var.db_name
     db_user           = var.db_user
