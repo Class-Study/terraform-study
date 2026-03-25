@@ -67,6 +67,18 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
+      # ── Importar recursos que já existem na AWS (apply parcial anterior) ────
+      # continue-on-error: true pois falha se o recurso não existe ainda ou já está no state
+      - name: Importar Key Pair existente (se houver)
+        if: github.event.inputs.action != 'destroy'
+        run: |
+          terraform import ${{ env.TF_COMMON_VARS }} \
+            aws_key_pair.main \
+            "eduspace-dev-key" \
+          && echo "✅ Key pair importado para o state" \
+          || echo "ℹ️ Key pair não precisou ser importado"
+        continue-on-error: true
+
       # ── DESTROY manual (somente via workflow_dispatch) ──────────────────────
       - name: "⚠️ Terraform Destroy"
         if: github.event.inputs.action == 'destroy'
