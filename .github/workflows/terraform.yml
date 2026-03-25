@@ -15,7 +15,6 @@ on:
         options:
           - plan
           - apply
-          - destroy
 
 env:
   TF_VERSION: "1.6.0"
@@ -32,8 +31,7 @@ jobs:
   terraform:
     name: >-
       Terraform
-      ${{ github.event.inputs.action == 'destroy' && 'Destroy' ||
-          github.event_name == 'push' && 'Apply' || 'Plan' }}
+      ${{ github.event_name == 'push' && 'Apply' || 'Plan' }}
     runs-on: ubuntu-latest
     environment: terraform
     outputs:
@@ -70,7 +68,6 @@ jobs:
       # ── Importar recursos que já existem na AWS (apply parcial anterior) ────
       # continue-on-error: true pois falha se o recurso não existe ainda ou já está no state
       - name: Importar Key Pair existente (se houver)
-        if: github.event.inputs.action != 'destroy'
         run: |
           terraform import ${{ env.TF_COMMON_VARS }} \
             aws_key_pair.main \
@@ -79,17 +76,10 @@ jobs:
           || echo "ℹ️ Key pair não precisou ser importado"
         continue-on-error: true
 
-      # ── DESTROY manual (somente via workflow_dispatch) ──────────────────────
-      - name: "⚠️ Terraform Destroy"
-        if: github.event.inputs.action == 'destroy'
-        run: |
-          echo "::warning::Executando DESTROY — toda a infraestrutura será removida!"
-          terraform destroy -auto-approve ${{ env.TF_COMMON_VARS }}
 
       # ── PLAN (PRs, push e manual) ───────────────────────────────────────────
       - name: Terraform Plan
         id: plan
-        if: github.event.inputs.action != 'destroy'
         run: |
           terraform plan -no-color -out=tfplan ${{ env.TF_COMMON_VARS }}
 
@@ -131,9 +121,8 @@ jobs:
     name: Deploy nas EC2
     needs: terraform
     if: |
-      github.event.inputs.action != 'destroy' &&
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-       github.event.inputs.action == 'apply')
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event.inputs.action == 'apply'
     runs-on: ubuntu-latest
     environment: terraform
     permissions:

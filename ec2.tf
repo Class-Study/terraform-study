@@ -21,17 +21,6 @@ resource "aws_instance" "backend" {
   key_name               = aws_key_pair.main.key_name
   iam_instance_profile   = aws_iam_instance_profile.backend_ec2.name
 
-  dynamic "instance_market_options" {
-    for_each = var.use_spot ? [1] : []
-    content {
-      market_type = "spot"
-      spot_options {
-        max_price                      = var.spot_max_price
-        spot_instance_type             = "persistent"
-        instance_interruption_behavior = "stop"
-      }
-    }
-  }
 
   root_block_device {
     volume_size           = var.backend_volume_size
@@ -70,17 +59,6 @@ resource "aws_instance" "frontend" {
   vpc_security_group_ids = [aws_security_group.frontend.id]
   key_name               = aws_key_pair.main.key_name
 
-  dynamic "instance_market_options" {
-    for_each = var.use_spot ? [1] : []
-    content {
-      market_type = "spot"
-      spot_options {
-        max_price                      = var.spot_max_price
-        spot_instance_type             = "persistent"
-        instance_interruption_behavior = "stop"
-      }
-    }
-  }
 
   root_block_device {
     volume_size           = var.frontend_volume_size

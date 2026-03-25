@@ -62,18 +62,6 @@ variable "backend_volume_size" {
   default     = 30
 }
 
-# ── Spot Instances ────────────────────────────────────────────────────────────
-variable "use_spot" {
-  description = "Usar Spot Instances (~70% mais barato). Recomendado para dev/test."
-  type        = bool
-  default     = true
-}
-
-variable "spot_max_price" {
-  description = "Preco maximo por hora para Spot (USD). Default = On-Demand do t3.micro."
-  type        = string
-  default     = "0.0104" # nunca paga mais que o On-Demand
-}
 
 # ── SSH ───────────────────────────────────────────────────────────────────────
 variable "allowed_ssh_cidr" {

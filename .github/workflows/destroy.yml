@@ -1,0 +1,68 @@
+name: "⚠️ Terraform Destroy"
+
+# Disparado APENAS manualmente — nunca por push ou PR
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: >-
+          Digite DESTRUIR para confirmar a remoção de TODA a infraestrutura
+        required: true
+        type: string
+
+env:
+  TF_VERSION: "1.6.0"
+  AWS_REGION:  "us-east-1"
+  TF_COMMON_VARS: >-
+    -var="db_password=${{ secrets.TF_VAR_DB_PASSWORD }}"
+    -var="rabbitmq_password=${{ secrets.TF_VAR_RABBITMQ_PASSWORD }}"
+    -var="jwt_secret=${{ secrets.TF_VAR_JWT_SECRET }}"
+    -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
+
+jobs:
+  destroy:
+    name: "⚠️ Destruir infraestrutura"
+    runs-on: ubuntu-latest
+    environment: terraform
+
+    steps:
+      # ── Validar confirmação ────────────────────────────────────────────────
+      - name: Validar confirmação
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "DESTRUIR" ]; then
+            echo "❌ Confirmação inválida. Digite exatamente: DESTRUIR"
+            exit 1
+          fi
+          echo "✅ Confirmação aceita — prosseguindo com o destroy."
+
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Instalar Terraform ${{ env.TF_VERSION }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configurar AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      # ── Plan destroy (mostra o que será removido antes de agir) ───────────
+      - name: Terraform Plan Destroy
+        run: |
+          terraform plan -destroy -no-color ${{ env.TF_COMMON_VARS }}
+
+      # ── Destroy ────────────────────────────────────────────────────────────
+      - name: "🗑️ Terraform Destroy"
+        run: |
+          echo "::warning::Removendo TODA a infraestrutura da AWS..."
+          terraform destroy -auto-approve ${{ env.TF_COMMON_VARS }}
+          echo "✅ Infraestrutura destruída com sucesso."
+
