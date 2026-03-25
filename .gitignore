@@ -1,0 +1,25 @@
+# Dependências Terraform
+.terraform/
+.terraform.lock.hcl
+
+# State files — NUNCA commitar (contém senhas em texto puro!)
+terraform.tfstate
+terraform.tfstate.backup
+*.tfstate
+*.tfstate.*
+
+# Chave SSH gerada pelo Terraform
+*.pem
+
+# Arquivo com variáveis reais (crie a partir do .example)
+terraform.tfvars
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+.idea
+

@@ -1,0 +1,29 @@
+# ── Região e Projeto ──────────────────────────────────────────────────────────
+aws_region   = "us-east-1"
+project_name = "eduspace"
+environment  = "dev"
+
+# ── EC2 (mais barato possível para dev) ──────────────────────────────────────
+frontend_instance_type = "t3.micro"  # ~$8.47/mês
+backend_instance_type  = "t3.small"  # ~$16.94/mês
+
+# ── SSH ────────────────────────────────────────────────────────────────────────
+# RECOMENDADO: substitua por seu IP (curl ifconfig.me) para maior segurança
+# Exemplo: allowed_ssh_cidr = "203.0.113.10/32"
+allowed_ssh_cidr = "0.0.0.0/0"
+
+# ── Versões das imagens Docker ────────────────────────────────────────────────
+front_version = "latest"
+back_version  = "latest"
+
+# ── Banco de Dados ────────────────────────────────────────────────────────────
+db_name = "eduspace"
+db_user = "postgres"
+
+# IMPORTANTE: Troque por senhas fortes. Evite caracteres especiais de bash ($, `, \)
+db_password       = "SenhaForte123!"
+rabbitmq_password = "RabbitSenha456!"
+
+# JWT: mínimo 32 caracteres
+jwt_secret = "meu-segredo-jwt-super-secreto-minimo-32-chars!"
+
