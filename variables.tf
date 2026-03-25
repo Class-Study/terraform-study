@@ -41,13 +41,13 @@ variable "subnet_cidr_backend" {
 variable "frontend_instance_type" {
   description = "Tipo da instância EC2 do frontend (Nginx + React)"
   type        = string
-  default     = "t2.micro" # ~$8/mês — elegível ao Free Tier
+  default     = "t3.micro" # On-Demand ~R$44/mês | Spot ~R$15/mês — t2 tem suporte limitado a Spot
 }
 
 variable "backend_instance_type" {
   description = "Tipo da instância EC2 do backend (Spring Boot + PostgreSQL + RabbitMQ)"
   type        = string
-  default     = "t3.micro" # ~$15/mês — 2 vCPU / 2 GB RAM
+  default     = "t3.micro" # On-Demand ~R$44/mês | Spot ~R$15/mês — 2 vCPU / 1 GB RAM + 2 GB swap
 }
 
 variable "frontend_volume_size" {
@@ -60,6 +60,19 @@ variable "backend_volume_size" {
   description = "Tamanho do volume raiz do backend em GB"
   type        = number
   default     = 30
+}
+
+# ── Spot Instances ────────────────────────────────────────────────────────────
+variable "use_spot" {
+  description = "Usar Spot Instances (~70% mais barato). Recomendado para dev/test."
+  type        = bool
+  default     = true
+}
+
+variable "spot_max_price" {
+  description = "Preco maximo por hora para Spot (USD). Default = On-Demand do t3.micro."
+  type        = string
+  default     = "0.0104" # nunca paga mais que o On-Demand
 }
 
 # ── SSH ───────────────────────────────────────────────────────────────────────
