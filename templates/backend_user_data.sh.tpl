@@ -1,9 +1,9 @@
 #!/bin/bash
 # =============================================================================
-# Backend EC2 - Setup Script
+# Backend EC2 - Setup Script (Ubuntu 24.04)
 # Gerado pelo Terraform templatefile()
 # Contém: PostgreSQL 16 + RabbitMQ 3.13 + Spring Boot (Java)
-# NOTA: Todos os valores sao variaveis Terraform - substituidas antes de rodar
+# Os valores sao variaveis Terraform - substituidas antes de rodar
 # =============================================================================
 set -euo pipefail
 exec > >(tee /var/log/user-data.log | logger -t user-data) 2>&1
@@ -12,22 +12,30 @@ echo "========================================"
 echo " Iniciando setup do Backend EC2"
 echo "========================================"
 
-# ── 1. Instalar Docker ────────────────────────────────────────────────────────
-dnf update -y
-dnf install -y docker
-systemctl enable --now docker
-usermod -aG docker ec2-user
+# ── 1. Atualizar sistema ──────────────────────────────────────────────────────
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get upgrade -y
 
-# ── 2. Instalar Docker Compose v2 (plugin) ────────────────────────────────────
-mkdir -p /usr/local/lib/docker/cli-plugins
-curl -fsSL \
-  "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
-  -o /usr/local/lib/docker/cli-plugins/docker-compose
-chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-docker compose version
+# ── 2. Instalar Docker (método oficial Ubuntu) ────────────────────────────────
+apt-get install -y ca-certificates curl gnupg
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+  | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+apt-get update -y
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+systemctl enable --now docker
+usermod -aG docker ubuntu
 
 # ── 3. Adicionar SWAP (2 GB) ──────────────────────────────────────────────────
-# t3.small tem 2 GB RAM — Spring Boot + PG + Rabbit precisam de margem extra
 if [ ! -f /swapfile ]; then
   fallocate -l 2G /swapfile
   chmod 600 /swapfile
@@ -41,8 +49,6 @@ fi
 mkdir -p /opt/app
 
 # ── 5. Docker Compose ─────────────────────────────────────────────────────────
-# Os valores abaixo sao injetados pelo Terraform antes de rodar
-# Quoted heredoc ('EOF') — bash não expande nada, valores já estão prontos
 cat > /opt/app/docker-compose.yml << 'COMPOSE_EOF'
 services:
 
@@ -106,21 +112,17 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-# ── Volumes persistentes ───────────────────────────────────────────────────────
 volumes:
   postgres_data:
   rabbitmq_data:
 
 COMPOSE_EOF
 
-# ── 6. Subir serviços ─────────────────────────────────────────────────────────
-cd /opt/app
-docker compose pull
-docker compose up -d
+# ── 6. Permissões ─────────────────────────────────────────────────────────────
+chown -R ubuntu:ubuntu /opt/app
 
 echo "========================================"
-echo " Backend setup concluído!"
+echo " Backend setup concluido!"
 echo " Spring Boot iniciando (aguarde ~60s)..."
 echo " Logs: docker compose -f /opt/app/docker-compose.yml logs -f"
 echo "========================================"
-

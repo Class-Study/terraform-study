@@ -125,3 +125,9 @@ variable "jwt_secret" {
   type        = string
   sensitive   = true
 }
+
+variable "ami_id" {
+  description = "ID da AMI Ubuntu a usar nas instâncias EC2"
+  type        = string
+  default     = "ami-0ec10929233384c7f" # Ubuntu 24.04 LTS us-east-1
+}

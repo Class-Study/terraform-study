@@ -25,12 +25,12 @@ output "backend_public_ip" {
 
 output "ssh_frontend" {
   description = "Comando SSH para acessar o frontend"
-  value       = "ssh -i ${var.project_name}-${var.environment}.pem ec2-user@${aws_instance.frontend.public_ip}"
+  value       = "ssh -i ${var.project_name}-${var.environment}.pem ubuntu@${aws_instance.frontend.public_ip}"
 }
 
 output "ssh_backend" {
   description = "Comando SSH para acessar o backend (via frontend como bastion)"
-  value       = "ssh -i ${var.project_name}-${var.environment}.pem -J ec2-user@${aws_instance.frontend.public_ip} ec2-user@${aws_instance.backend.private_ip}"
+  value       = "ssh -i ${var.project_name}-${var.environment}.pem -J ubuntu@${aws_instance.frontend.public_ip} ubuntu@${aws_instance.backend.private_ip}"
 }
 
 output "estimated_monthly_cost" {

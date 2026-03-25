@@ -1,16 +1,12 @@
-# ── AMI: Amazon Linux 2023 (mais recente) ─────────────────────────────────────
-data "aws_ami" "amazon_linux_2023" {
+# ── AMI: Ubuntu (fornecida via variável) ──────────────────────────────────────
+# ami-0ec10929233384c7f = Ubuntu 24.04 LTS us-east-1
+data "aws_ami" "ubuntu" {
   most_recent = true
-  owners      = ["amazon"]
+  owners      = ["099720109477"] # Canonical
 
   filter {
-    name   = "name"
-    values = ["al2023-ami-*-x86_64"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
+    name   = "image-id"
+    values = [var.ami_id]
   }
 }
 
@@ -18,7 +14,7 @@ data "aws_ami" "amazon_linux_2023" {
 # Criado PRIMEIRO porque o frontend precisa do private IP do backend
 # Contém: Spring Boot + PostgreSQL 16 + RabbitMQ 3.13
 resource "aws_instance" "backend" {
-  ami                    = data.aws_ami.amazon_linux_2023.id
+  ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.backend_instance_type
   subnet_id              = aws_subnet.backend.id
   vpc_security_group_ids = [aws_security_group.backend.id]
@@ -51,7 +47,7 @@ resource "aws_instance" "backend" {
 # Contém: Nginx (reverse proxy) + React/Vite frontend
 # Recebe o private IP do backend para configurar o proxy Nginx
 resource "aws_instance" "frontend" {
-  ami                    = data.aws_ami.amazon_linux_2023.id
+  ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.frontend_instance_type
   subnet_id              = aws_subnet.frontend.id
   vpc_security_group_ids = [aws_security_group.frontend.id]
@@ -76,4 +72,3 @@ resource "aws_instance" "frontend" {
 
   depends_on = [aws_instance.backend]
 }
-

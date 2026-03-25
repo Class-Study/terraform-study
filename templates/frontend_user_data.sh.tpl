@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Frontend EC2 - Setup Script
+# Frontend EC2 - Setup Script (Ubuntu 24.04)
 # Gerado pelo Terraform templatefile()
 # Contém: Nginx (reverse proxy) + React/Vite frontend
 # =============================================================================
@@ -12,26 +12,33 @@ echo " Iniciando setup do Frontend EC2"
 echo " Backend IP: ${backend_private_ip}"
 echo "========================================"
 
-# ── 1. Instalar Docker ────────────────────────────────────────────────────────
-dnf update -y
-dnf install -y docker
-systemctl enable --now docker
-usermod -aG docker ec2-user
+# ── 1. Atualizar sistema ──────────────────────────────────────────────────────
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get upgrade -y
 
-# ── 2. Instalar Docker Compose v2 (plugin) ────────────────────────────────────
-mkdir -p /usr/local/lib/docker/cli-plugins
-curl -fsSL \
-  "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
-  -o /usr/local/lib/docker/cli-plugins/docker-compose
-chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-docker compose version
+# ── 2. Instalar Docker (método oficial Ubuntu) ────────────────────────────────
+apt-get install -y ca-certificates curl gnupg
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+  | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+apt-get update -y
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+systemctl enable --now docker
+usermod -aG docker ubuntu
 
 # ── 3. Criar estrutura de diretórios ─────────────────────────────────────────
 mkdir -p /opt/app/nginx/conf.d /opt/app/nginx/certs
 
 # ── 4. Nginx — configuração principal ────────────────────────────────────────
-# Nota: heredoc QUOTED ('EOF') — bash NÃO expande variáveis
-# Terraform já substituiu ${backend_private_ip} antes deste script executar
 cat > /opt/app/nginx/nginx.conf << 'NGINX_MAIN_EOF'
 user nginx;
 worker_processes auto;
@@ -56,7 +63,6 @@ http {
     keepalive_timeout 65;
     client_max_body_size 20M;
 
-    # Compressão gzip
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml;
 
@@ -65,8 +71,6 @@ http {
 NGINX_MAIN_EOF
 
 # ── 5. Nginx — site config (proxy frontend + API) ─────────────────────────────
-# ATENÇÃO: ${backend_private_ip} é variável Terraform (substituída antes de rodar)
-# Nginx usa $host, $remote_addr etc — ficam literais no quoted heredoc ✓
 cat > /opt/app/nginx/conf.d/app.conf << 'NGINX_SITE_EOF'
 upstream backend_api {
     server ${backend_private_ip}:8080;
@@ -77,13 +81,11 @@ server {
     listen 80;
     server_name _;
 
-    # Healthcheck do próprio nginx
     location /health {
         return 200 'OK';
         add_header Content-Type text/plain;
     }
 
-    # ── Proxy para API do backend ──────────────────────────────────────────
     location /api/ {
         proxy_pass         http://backend_api;
         proxy_http_version 1.1;
@@ -97,7 +99,6 @@ server {
         proxy_send_timeout 60s;
     }
 
-    # ── Serve o frontend React (SPA) ──────────────────────────────────────
     location / {
         proxy_pass         http://frontend:80;
         proxy_http_version 1.1;
@@ -110,11 +111,9 @@ server {
 NGINX_SITE_EOF
 
 # ── 6. Docker Compose ─────────────────────────────────────────────────────────
-# ${front_version} é variável Terraform — substituída antes de rodar ✓
 cat > /opt/app/docker-compose.yml << 'COMPOSE_EOF'
 services:
 
-  # ── Nginx reverse-proxy ────────────────────────────────────────────────────
   nginx:
     image: nginx:1.27-alpine
     ports:
@@ -128,20 +127,16 @@ services:
       - frontend
     restart: unless-stopped
 
-  # ── Frontend React/Vite ────────────────────────────────────────────────────
   frontend:
     image: ghcr.io/class-study/study-front:${front_version}
     restart: unless-stopped
 
 COMPOSE_EOF
 
-# ── 7. Subir serviços ─────────────────────────────────────────────────────────
-cd /opt/app
-docker compose pull
-docker compose up -d
+# ── 7. Permissões ─────────────────────────────────────────────────────────────
+chown -R ubuntu:ubuntu /opt/app
 
 echo "========================================"
-echo " Frontend setup concluído!"
+echo " Frontend setup concluido!"
 echo " Acesse: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)"
 echo "========================================"
-

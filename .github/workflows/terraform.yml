@@ -160,7 +160,7 @@ jobs:
                    -o StrictHostKeyChecking=no \
                    -o ConnectTimeout=10 \
                    -o BatchMode=yes \
-                   ec2-user@${{ needs.terraform.outputs.frontend_ip }} \
+                   ubuntu@${{ needs.terraform.outputs.frontend_ip }} \
                    "test -f /opt/app/docker-compose.yml" 2>/dev/null; then
               echo "✅ Frontend EC2 pronta! ($((i * 10))s)"
               break
@@ -178,8 +178,8 @@ jobs:
                    -o StrictHostKeyChecking=no \
                    -o ConnectTimeout=10 \
                    -o BatchMode=yes \
-                   -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ec2-user@${{ needs.terraform.outputs.frontend_ip }}" \
-                   ec2-user@${{ needs.terraform.outputs.backend_ip }} \
+                   -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ubuntu@${{ needs.terraform.outputs.frontend_ip }}" \
+                   ubuntu@${{ needs.terraform.outputs.backend_ip }} \
                    "test -f /opt/app/docker-compose.yml" 2>/dev/null; then
               echo "✅ Backend EC2 pronta! ($((i * 10))s)"
               break
@@ -196,7 +196,7 @@ jobs:
           GHCR_USER:  ${{ github.actor }}
         run: |
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
-            ec2-user@${{ needs.terraform.outputs.frontend_ip }} \
+            ubuntu@${{ needs.terraform.outputs.frontend_ip }} \
             "echo '${{ secrets.GHCR_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin \
              && cd /opt/app \
              && docker compose pull \
@@ -209,8 +209,8 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_rsa \
               -o StrictHostKeyChecking=no \
-              -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ec2-user@${{ needs.terraform.outputs.frontend_ip }}" \
-              ec2-user@${{ needs.terraform.outputs.backend_ip }} \
+              -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ubuntu@${{ needs.terraform.outputs.frontend_ip }}" \
+              ubuntu@${{ needs.terraform.outputs.backend_ip }} \
               "echo '${{ secrets.GHCR_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin \
                && cd /opt/app \
                && docker compose pull \
@@ -234,7 +234,7 @@ jobs:
         run: |
           echo "::warning::Health check falhou — executando rollback do frontend..."
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
-            ec2-user@${{ needs.terraform.outputs.frontend_ip }} \
+            ubuntu@${{ needs.terraform.outputs.frontend_ip }} \
             "cd /opt/app && docker compose down && docker compose up -d"
           echo "Rollback do frontend concluído"
 
@@ -244,7 +244,7 @@ jobs:
           echo "::warning::Executando rollback do backend..."
           ssh -i ~/.ssh/id_rsa \
               -o StrictHostKeyChecking=no \
-              -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ec2-user@${{ needs.terraform.outputs.frontend_ip }}" \
-              ec2-user@${{ needs.terraform.outputs.backend_ip }} \
+              -o ProxyCommand="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -W %h:%p ubuntu@${{ needs.terraform.outputs.frontend_ip }}" \
+              ubuntu@${{ needs.terraform.outputs.backend_ip }} \
               "cd /opt/app && docker compose down && docker compose up -d"
           echo "Rollback do backend concluído"
