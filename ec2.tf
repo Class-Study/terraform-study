@@ -89,6 +89,7 @@ resource "aws_instance" "frontend" {
     encrypted             = true
   }
 
+  user_data_replace_on_change = true
   user_data = templatefile("${path.module}/templates/frontend_user_data.sh.tpl", {
     backend_private_ip = aws_instance.backend.private_ip
     front_version      = var.front_version

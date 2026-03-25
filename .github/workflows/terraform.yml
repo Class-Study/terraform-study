@@ -149,7 +149,27 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ needs.terraform.outputs.frontend_ip }} >> ~/.ssh/known_hosts
+
+          FRONTEND_IP="${{ needs.terraform.outputs.frontend_ip }}"
+
+          if [ -z "$FRONTEND_IP" ]; then
+            echo "❌ frontend_ip está vazio — o terraform apply pode ter falhado."
+            exit 1
+          fi
+
+          echo "Aguardando SSH ficar disponível em $FRONTEND_IP..."
+          for i in $(seq 1 30); do
+            if ssh-keyscan -T 5 -H "$FRONTEND_IP" >> ~/.ssh/known_hosts 2>/dev/null; then
+              echo "✅ SSH disponível! ($((i * 10))s)"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "❌ Timeout aguardando SSH no frontend após 5 minutos."
+              exit 1
+            fi
+            echo "⏳ SSH ainda não disponível... tentativa $i/30 ($((i * 10))s)"
+            sleep 10
+          done
 
       # ── Aguardar EC2 frontend inicializar (user_data pode demorar ~3-5min) ──
       - name: Aguardar Frontend EC2 pronta
